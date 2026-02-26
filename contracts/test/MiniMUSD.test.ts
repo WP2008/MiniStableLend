@@ -1,7 +1,9 @@
 import { expect } from "chai";
 import { network } from "hardhat";
 
-const { ethers } = await network.connect();
+// 连接网络并获取 ethers 对象
+const provider = await network.connect();
+const { ethers } = provider;
 
 describe("MiniMUSD", function () {
   let mUSD: any;
@@ -10,11 +12,13 @@ describe("MiniMUSD", function () {
   let vault: any;
 
   beforeEach(async function () {
-    // 获取测试账户  假设 vault 是一个合约
+    // 获取测试账户
     [owner, user, vault] = await ethers.getSigners();
     // 部署 MiniMUSD 合约
     const MiniMUSD = await ethers.getContractFactory("MiniMUSD");
-    mUSD = await MiniMUSD.deploy(vault.address);
+    mUSD = await MiniMUSD.deploy();
+    // 设置 vault 地址
+    await mUSD.setVault(vault.address);
   });
 
   describe("Deployment", function () {
@@ -29,8 +33,9 @@ describe("MiniMUSD", function () {
 
     it("Should revert when vault address is zero", async function () {
       const MiniMUSD = await ethers.getContractFactory("MiniMUSD");
+      const mUSD = await MiniMUSD.deploy();
       await expect(
-        MiniMUSD.deploy(ethers.ZeroAddress)
+        mUSD.setVault(ethers.ZeroAddress)
       ).to.be.revertedWith("Vault address cannot be zero");
     });
 

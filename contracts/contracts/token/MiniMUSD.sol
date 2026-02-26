@@ -9,12 +9,23 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  */
 contract MiniMUSD is ERC20 {
 
-    address public immutable vault;
+    address public vault;
+    // 防止重复设置Vault
+    bool public vaultSet;
 
-    constructor(address _vault) ERC20("Mini MUSD", "mUSD") {
+    constructor() ERC20("Mini MUSD", "mUSD") {}
+
+    /**
+     * @dev 设置Vault合约地址（仅初始化时可调用一次）
+     * @param _vault MiniVault合约地址
+     */
+    function setVault(address _vault) external {
+        require(!vaultSet, "Vault already set");
         require(_vault != address(0), "Vault address cannot be zero");
         vault = _vault;
+        vaultSet = true;
     }
+    
 
     modifier onlyVault() {
         require(msg.sender == vault, "Only Vault");
