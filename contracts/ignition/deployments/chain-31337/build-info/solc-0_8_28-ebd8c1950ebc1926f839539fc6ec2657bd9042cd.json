@@ -1,0 +1,40 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-ebd8c1950ebc1926f839539fc6ec2657bd9042cd",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/mocks/MockAggregatorV3.sol": "project/contracts/mocks/MockAggregatorV3.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": [],
+      "viaIR": true
+    },
+    "sources": {
+      "project/contracts/mocks/MockAggregatorV3.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\n/**\n * @title MockAggregatorV3\n * @dev Mock Chainlink price feed aggregator for testing\n */\ncontract MockAggregatorV3 {\n    int256 public price;\n    uint8 public decimals;\n    uint256 public updatedAt;\n\n    constructor(int256 _price, uint8 _decimals) {\n        price = _price;\n        decimals = _decimals;\n        updatedAt = block.timestamp;\n    }\n\n    function setPrice(int256 _price) external {\n        price = _price;\n        updatedAt = block.timestamp;\n    }\n\n    function setDecimals(uint8 _decimals) external {\n        decimals = _decimals;\n    }\n\n    function latestRoundData()\n        external\n        view\n        returns (\n            uint80 roundId,\n            int256 answer,\n            uint256 startedAt,\n            uint256 updatedAt_,\n            uint80 answeredInRound\n        )\n    {\n        return (0, price, 0, updatedAt, 0);\n    }\n}\n"
+      }
+    }
+  }
+}
