@@ -5,6 +5,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "hardhat/console.sol";
 
 import "./interface/IMiniMUSD.sol";
 import "./interface/IMiniStETH.sol";
@@ -181,21 +182,21 @@ contract MiniVault is ReentrancyGuard, AccessControl {
     /**
      * @notice 计算 stETH 数量对应的 USD 价值
      * @param stETHAmount stETH 数量（18位小数）
-     * @return USD 价值（18位小数）
+     * @return USD 价值（8位小数）
      */
     function _stETHToUSD(uint256 stETHAmount) internal view returns (uint256) {
         (uint256 ethPrice, uint256 stETHRate) = _getPrices();
-        return (stETHAmount * stETHRate * ethPrice * 1e10) / BASE;
+        return (stETHAmount * stETHRate * ethPrice) / (BASE * BASE);
     }
 
     /**
      * @notice 计算 mUSD 数量对应的 stETH 数量
-     * @param mUSDAmount mUSD 数量（18位小数）
+     * @param mUSDAmount mUSD 数量（8位小数）
      * @return stETH 数量（18位小数）
      */
     function _mUSDToStETH(uint256 mUSDAmount) internal view returns (uint256) {
         (uint256 ethPrice, uint256 stETHRate) = _getPrices();
-        return (mUSDAmount * 1e26) / (ethPrice * stETHRate);
+        return (mUSDAmount * BASE * BASE) / (ethPrice * stETHRate);
     }
 
     /**
@@ -271,10 +272,11 @@ contract MiniVault is ReentrancyGuard, AccessControl {
 
         // 1. 拆分利息 90% 给 stETH 持有人， 10% 进入国库
         uint256 interestForTreasury = interestRepaid * INTEREST_TREASURY_SHARE / BASE; // 10%
-        uint256 interestForStETH = interestRepaid - interestForTreasury; // 90%
+        uint256 interestForStETH = interestRepaid - interestForTreasury; // 90% 
 
         // 2. 国库收益，直接将 mUSD 转入. （用户偿还的 mUSD 已经转入了 Vault 合约）
         if (interestForTreasury > 0) {
+            mUSD.approve(address(treasury), interestForTreasury);
             treasury.receiveFee(address(mUSD), interestForTreasury);
             emit InterestDistributed(interestForStETH, interestForTreasury);
         }
@@ -397,9 +399,7 @@ contract MiniVault is ReentrancyGuard, AccessControl {
 
         // 1. 计算利息
         _accrueInterest(msg.sender);
-
         Position storage pos = positions[msg.sender];
-        require(pos.debt >= amount, "Repay amount exceeds debt");
 
         // 2. 计算本金和利息
         uint256 interestOwed = pos.debt - pos.initialDebt; // 累计未还利息
@@ -422,18 +422,18 @@ contract MiniVault is ReentrancyGuard, AccessControl {
         // 3. 转移用户的 mUSD 到合约
         bool success = mUSD.transferFrom(msg.sender, address(this), amount);
         require(success, "mUSD tranferFrom failed");
-
         // 4. 分配利息收益, 定期更新兑换比例，结算 stETH 持有者利息收益
         (, uint256 toTreasury) = _distributeInterest(interestToRepay);
 
         // 5. 销毁 mUSD（扣除国库收益后的剩余部分）
         uint256 amountToBurn = amount - toTreasury;
+
         if (amountToBurn > 0) {
             mUSD.burn(address(this), amountToBurn);
         }
 
         // 6. 更新用户持仓
-        pos.debt -= amount;
+        pos.debt -= (interestToRepay + principalToRepay);
         pos.initialDebt -= principalToRepay;
 
         emit Repay(msg.sender, amount);
@@ -503,7 +503,7 @@ contract MiniVault is ReentrancyGuard, AccessControl {
         if (amountToBurn > 0) {
             mUSD.burn(address(this), amountToBurn);
         }
-
+        
         // 10. 计算清算手续费 stETH
         uint256 treasuryFee = collateralSeized * LIQUIDATION_TREASURY_FEE / BASE;
         uint256 liquidatorCollateral = collateralSeized - treasuryFee;
@@ -511,6 +511,9 @@ contract MiniVault is ReentrancyGuard, AccessControl {
 
         // 11. 转移质押 stETH， 清算人获得 4% 折扣部分，国库 1% 手续费
         stETH.transfer(msg.sender, liquidatorCollateral);
+
+        // 授权给 treasury 转账
+        stETH.approve(address(treasury), treasuryFee);
         treasury.receiveFee(address(stETH), treasuryFee);
 
         // 12. 更新借款人状态
@@ -681,11 +684,12 @@ contract MiniVault is ReentrancyGuard, AccessControl {
      * @param user 用户地址
      * @return collateral 质押的 stETH 数量 
      * @return debt 债务的 mUSD 数量（包含利息）
+     * @return initialDebt 初始借款本金数量
      * @return lastUpdate 上次更新时间
      */
-    function getPosition(address user) external view returns (uint256 collateral, uint256 debt, uint256 lastUpdate) {
+    function getPosition(address user) external view returns (uint256 collateral, uint256 debt, uint256 initialDebt, uint256 lastUpdate) {
         Position storage pos = positions[user];
-        return (pos.collateral, pos.debt, pos.lastUpdate);
+        return (pos.collateral, pos.debt, pos.initialDebt, pos.lastUpdate);
     }
 
 
