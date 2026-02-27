@@ -382,8 +382,9 @@ contract MiniVault is ReentrancyGuard, AccessControl {
 
         // 5. 更新持仓信息
         Position storage pos = positions[msg.sender];
-        pos.initialDebt += mUSDAmount; // 债务的本金
-        pos.debt += mUSDAmount;  // 债务 本金+利息
+        // 借款产生的 fee 不应该再计息
+        pos.initialDebt += (mUSDAmount - fee); // 债务的本金
+        pos.debt += (mUSDAmount - fee);  // 债务 本金+利息
         pos.lastUpdate = block.timestamp;
 
         emit Borrow(msg.sender, mUSDAmount, fee);
