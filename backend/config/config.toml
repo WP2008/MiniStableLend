@@ -1,0 +1,52 @@
+[mysql]
+host = "127.0.0.1"
+port = "3306"
+dbname = "minilend"
+username = "minilend_user"
+password = "Minilend@123456"
+max_open_conns = 0
+max_idle_conns = 0
+max_life_time = 0
+
+[redis]
+host = "127.0.0.1"
+port = "6379"
+db = 1
+user_name = "minilend"
+password = ""
+max_idle = 0
+max_active = 0
+idle_timeout = 0
+
+[env]
+port = "8080"
+version = "1"
+protocol = "https"
+task_duration = 2
+task_extend_duration = 5
+wss_timeout_duration = 20
+domain_name = "118.195.185.245:8080"
+
+[blockchain]
+local_rpc_url = "http://127.0.0.1:8545"
+mainnet_rpc_url = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID"
+scan_interval_seconds = 15
+
+[defaultadmin]
+username = "admin"
+password = "password"
+
+[jwt]
+expire_time = 2592000
+secret_key = "243223ffslsfsldfl412fdsfsdf"
+
+[email]
+username = "test@gmail.com"
+pwd = "XXXX"
+host = "smtp.gmail.com"
+port = "587"
+from = "musd beidge <test@gmail.com>"
+subject = "Insufficient balance of bridge account"
+to = ["XXXX@outlook.com"]
+cc = ["XXXX@126.com"]
+
