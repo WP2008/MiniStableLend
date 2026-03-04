@@ -66,7 +66,11 @@ type RedisConfig struct {
 }
 
 type BlockchainConfig struct {
-	LocalRPCURL      string `toml:"local_rpc_url"`
-	MainnetRPCURL    string `toml:"mainnet_rpc_url"`
-	ScanIntervalSecs int    `toml:"scan_interval_seconds"`
+	LocalRPCURL       string `toml:"local_rpc_url"`
+	MainnetRPCURL     string `toml:"mainnet_rpc_url"`
+	ScanIntervalSecs  int    `toml:"scan_interval_seconds"`
+	MiniVaultAddress  string `toml:"mini_vault_address"`
+	MiniMUSDAddress   string `toml:"mini_musd_address"`
+	MiniStETHAddress  string `toml:"mini_steth_address"`
+	MiniOracleAddress string `toml:"mini_oracle_address"`
 }

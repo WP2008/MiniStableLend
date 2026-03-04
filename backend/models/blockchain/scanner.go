@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"minilend/config"
 	"minilend/dao"
 	"minilend/models/blockchain/abi"
 	"minilend/service"
@@ -32,10 +33,12 @@ type ContractAddresses struct {
 
 // 事件签名哈希
 var (
-	depositEventHash   = abi.GetEventTopic("Deposit")
-	borrowEventHash    = abi.GetEventTopic("Borrow")
-	repayEventHash     = abi.GetEventTopic("Repay")
-	liquidateEventHash = abi.GetEventTopic("Liquidate")
+	depositETHEventHash    = abi.GetEventTopic("DepositETH")
+	depositCollateralHash  = abi.GetEventTopic("DepositCollateral")
+	borrowEventHash        = abi.GetEventTopic("Borrow")
+	repayEventHash         = abi.GetEventTopic("Repay")
+	liquidateEventHash     = abi.GetEventTopic("Liquidate")
+	withdrawCollateralHash = abi.GetEventTopic("WithdrawCollateral")
 )
 
 func NewChainScanner(rpcURL string, contracts *ContractAddresses, scanInterval time.Duration) (*ChainScanner, error) {
@@ -128,7 +131,13 @@ func (s *ChainScanner) scanNewBlocks(ctx context.Context, fromBlock uint64) uint
 		FromBlock: big.NewInt(int64(startBlock)),
 		ToBlock:   big.NewInt(int64(toBlock)),
 		Addresses: []common.Address{s.contracts.MiniVault},
-		Topics:    [][]common.Hash{{}},
+		Topics: [][]common.Hash{{
+			depositETHEventHash,
+			depositCollateralHash,
+			borrowEventHash,
+			repayEventHash,
+			liquidateEventHash,
+			withdrawCollateralHash}},
 	}
 
 	logs, err := s.client.FilterLogs(ctx, query)
@@ -154,14 +163,18 @@ func (s *ChainScanner) scanNewBlocks(ctx context.Context, fromBlock uint64) uint
 
 func (s *ChainScanner) processLog(vLog types.Log) {
 	switch vLog.Topics[0] {
-	case depositEventHash:
+	case depositETHEventHash:
 		s.processDepositEvent(vLog)
+	case depositCollateralHash:
+		s.processDepositCollateralEvent(vLog)
 	case borrowEventHash:
 		s.processBorrowEvent(vLog)
 	case repayEventHash:
 		s.processRepayEvent(vLog)
 	case liquidateEventHash:
 		s.processLiquidateEvent(vLog)
+	case withdrawCollateralHash:
+		s.processWithdrawCollateralEvent(vLog)
 	}
 }
 
@@ -172,16 +185,29 @@ func (s *ChainScanner) processDepositEvent(vLog types.Log) {
 		return
 	}
 
-	log.Printf("Deposit event: user=%s, collateral=%s, minted=%s",
-		event.User.Hex(), event.CollateralAmount.String(), event.MintedAmount.String())
+	log.Printf("DepositETH event: user=%s, amount=%s, stETHAmount=%s",
+		event.User.Hex(), event.Amount.String(), event.StETHAmount.String())
 
-	// 更新数据库中的仓位信息
+	// TODO: 实现存款ETH事件的处理逻辑
+}
+
+func (s *ChainScanner) processDepositCollateralEvent(vLog types.Log) {
+	event, err := abi.ParseDepositCollateralEvent(vLog.Data, vLog.Topics)
+	if err != nil {
+		log.Printf("Failed to parse deposit collateral event: %v", err)
+		return
+	}
+
+	log.Printf("DepositCollateral event: user=%s, amount=%s",
+		event.User.Hex(), event.Amount.String())
+
+	// 更新数据库中的质押信息
 	position, err := s.positionService.GetUserPosition(event.User.Hex())
 	if err != nil {
-		// 如果仓位不存在，创建新的仓位
+		log.Printf("Position not found for user: %s, creating new position", event.User.Hex())
 		position = &dao.Position{
 			UserAddress:        event.User.Hex(),
-			CollateralAmount:   convertWeiToFloat(event.CollateralAmount),
+			CollateralAmount:   convertWeiToFloat(event.Amount),
 			DebtAmount:         0,
 			InitialDebt:        0,
 			HealthFactor:       0,
@@ -194,8 +220,7 @@ func (s *ChainScanner) processDepositEvent(vLog types.Log) {
 			log.Printf("Failed to create position: %v", err)
 		}
 	} else {
-		// 更新现有仓位的质押数量
-		position.CollateralAmount += convertWeiToFloat(event.CollateralAmount)
+		position.CollateralAmount += convertWeiToFloat(event.Amount)
 		if err := dao.UpdatePosition(position); err != nil {
 			log.Printf("Failed to update position: %v", err)
 		}
@@ -209,8 +234,8 @@ func (s *ChainScanner) processBorrowEvent(vLog types.Log) {
 		return
 	}
 
-	log.Printf("Borrow event: user=%s, amount=%s, rate=%s, newDebt=%s",
-		event.User.Hex(), event.Amount.String(), event.InterestRate.String(), event.NewDebt.String())
+	log.Printf("Borrow event: user=%s, mUSDAmount=%s, fee=%s",
+		event.User.Hex(), event.MUSDAmount.String(), event.Fee.String())
 
 	// 更新数据库中的借款信息
 	position, err := s.positionService.GetUserPosition(event.User.Hex())
@@ -219,9 +244,10 @@ func (s *ChainScanner) processBorrowEvent(vLog types.Log) {
 		return
 	}
 
-	position.DebtAmount = convertWeiToFloat(event.NewDebt)
-	position.InitialDebt = convertWeiToFloat(event.Amount)
-	position.InterestRate = convertWeiToFloat(event.InterestRate) / 1e18 // 利率通常以18位小数表示
+	// Borrow事件包含借款金额和手续费，实际借款净额 = mUSDAmount - fee
+	borrowAmount := new(big.Int).Sub(event.MUSDAmount, event.Fee)
+	position.DebtAmount = convertWeiToFloat(borrowAmount)
+	position.InitialDebt = convertWeiToFloat(borrowAmount)
 	position.LastInterestUpdate = time.Now()
 
 	if err := dao.UpdatePosition(position); err != nil {
@@ -236,8 +262,8 @@ func (s *ChainScanner) processRepayEvent(vLog types.Log) {
 		return
 	}
 
-	log.Printf("Repay event: user=%s, amount=%s, remaining=%s",
-		event.User.Hex(), event.Amount.String(), event.RemainingDebt.String())
+	log.Printf("Repay event: user=%s, amount=%s",
+		event.User.Hex(), event.Amount.String())
 
 	// 更新数据库中的还款信息
 	position, err := s.positionService.GetUserPosition(event.User.Hex())
@@ -246,7 +272,11 @@ func (s *ChainScanner) processRepayEvent(vLog types.Log) {
 		return
 	}
 
-	position.DebtAmount = convertWeiToFloat(event.RemainingDebt)
+	// 还款减少债务
+	position.DebtAmount -= convertWeiToFloat(event.Amount)
+	if position.DebtAmount < 0 {
+		position.DebtAmount = 0
+	}
 	position.LastInterestUpdate = time.Now()
 
 	if err := dao.UpdatePosition(position); err != nil {
@@ -261,20 +291,48 @@ func (s *ChainScanner) processLiquidateEvent(vLog types.Log) {
 		return
 	}
 
-	log.Printf("Liquidate event: liquidator=%s, user=%s, collateralSeized=%s, debtRepaid=%s",
-		event.Liquidator.Hex(), event.User.Hex(), event.CollateralSeized.String(), event.DebtRepaid.String())
+	log.Printf("Liquidate event: liquidator=%s, borrower=%s, debtRepaid=%s, collateralSeized=%s, fee=%s",
+		event.Liquidator.Hex(), event.Borrower.Hex(), event.DebtRepaid.String(),
+		event.CollateralSeized.String(), event.Fee.String())
 
 	// 更新数据库中的清算信息
+	position, err := s.positionService.GetUserPosition(event.Borrower.Hex())
+	if err != nil {
+		log.Printf("Position not found for borrower: %s", event.Borrower.Hex())
+		return
+	}
+
+	// 清算后仓位状态更新
+	position.CollateralAmount -= convertWeiToFloat(event.CollateralSeized)
+	position.DebtAmount = 0   // 债务清零
+	position.IsActive = false // 仓位不再活跃
+
+	if err := dao.UpdatePosition(position); err != nil {
+		log.Printf("Failed to update position: %v", err)
+	}
+}
+
+func (s *ChainScanner) processWithdrawCollateralEvent(vLog types.Log) {
+	event, err := abi.ParseWithdrawCollateralEvent(vLog.Data, vLog.Topics)
+	if err != nil {
+		log.Printf("Failed to parse withdraw collateral event: %v", err)
+		return
+	}
+
+	log.Printf("WithdrawCollateral event: user=%s, amount=%s, ethReceived=%s",
+		event.User.Hex(), event.Amount.String(), event.ETHReceived.String())
+
+	// 更新数据库中的提取质押物信息
 	position, err := s.positionService.GetUserPosition(event.User.Hex())
 	if err != nil {
 		log.Printf("Position not found for user: %s", event.User.Hex())
 		return
 	}
 
-	// 清算后仓位状态更新
-	position.CollateralAmount -= convertWeiToFloat(event.CollateralSeized)
-	position.DebtAmount = convertWeiToFloat(big.NewInt(0)) // 债务清零
-	position.IsActive = false                              // 仓位不再活跃
+	position.CollateralAmount -= convertWeiToFloat(event.Amount)
+	if position.CollateralAmount < 0 {
+		position.CollateralAmount = 0
+	}
 
 	if err := dao.UpdatePosition(position); err != nil {
 		log.Printf("Failed to update position: %v", err)
@@ -293,9 +351,9 @@ func convertWeiToFloat(wei *big.Int) float64 {
 // 获取默认合约地址（本地开发网络）
 func GetDefaultContractAddresses() *ContractAddresses {
 	return &ContractAddresses{
-		MiniVault:  common.HexToAddress("0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"),
-		MiniMUSD:   common.HexToAddress("0x5FbDB2315678afecb367f032d93F642f64180aa3"),
-		MiniStETH:  common.HexToAddress("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"),
-		MiniOracle: common.HexToAddress("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"),
+		MiniVault:  common.HexToAddress(config.Config.Blockchain.MiniVaultAddress),
+		MiniMUSD:   common.HexToAddress(config.Config.Blockchain.MiniMUSDAddress),
+		MiniStETH:  common.HexToAddress(config.Config.Blockchain.MiniStETHAddress),
+		MiniOracle: common.HexToAddress(config.Config.Blockchain.MiniOracleAddress),
 	}
 }

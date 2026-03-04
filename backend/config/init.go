@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -18,15 +17,11 @@ func init() {
 		return
 	}
 
-	config, err := UnmarshalConfig(tomlPath)
+	_, err = UnmarshalConfig(tomlPath)
 	if err != nil {
 		panic("unmarshal config error: " + err.Error())
 		return
 	}
-
-	fmt.Printf("DEBUG: Loaded MySQL host: %s\n", config.Mysql.Host)
-	fmt.Printf("DEBUG: Loaded Blockchain config - LocalRPC: '%s', ScanInterval: %d\n",
-		config.Blockchain.LocalRPCURL, config.Blockchain.ScanIntervalSecs)
 }
 
 func UnmarshalConfig(configFilePath string) (*Conf, error) {

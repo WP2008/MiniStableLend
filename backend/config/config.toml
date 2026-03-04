@@ -31,6 +31,11 @@ domain_name = "118.195.185.245:8080"
 local_rpc_url = "http://127.0.0.1:8545"
 mainnet_rpc_url = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID"
 scan_interval_seconds = 15
+mini_vault_address = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+mini_musd_address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+mini_steth_address = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+mini_oracle_address = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+
 
 [defaultadmin]
 username = "admin"
