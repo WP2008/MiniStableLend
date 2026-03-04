@@ -356,7 +356,7 @@ describe("MiniVault", function () {
     });
   });
 
-  describe.only("Liquidate", function () {
+  describe("Liquidate", function () {
     beforeEach(async function () {
       // Setup user1 with position
       await vault.connect(user1).depositETH({ value: ethers.parseEther("10") });
@@ -696,4 +696,30 @@ describe("MiniVault", function () {
       expect(positionAfter.debt).to.be.gt(debtBefore);
     });
   });
+
+
+  describe.only("Debug", function () {
+    it("Should get correct borrowLimit", async function () {
+
+      console.log("1. User deposits ETH");
+      await (await vault.connect(user1).depositETH({value: ethers.parseEther("1")})).wait();
+      const stETHAmount = await stETH.connect(user1).balanceOf(user1.address);
+      console.log("   stETH Amount: ", stETHAmount);
+
+      console.log("2. User deposits stETH as collateral");
+      await stETH.connect(user1).approve(vault, stETHAmount);
+      await vault.connect(user1).depositCollateral(stETHAmount);
+      var position = await vault.getPosition(user1.address);
+      console.log("position: ", position);
+
+      console.log("3. User borrows stETH");
+      var borrowLimit = await vault.getBorrowLimit(user1.address);
+      console.log("borrowLimit: ", borrowLimit);
+      await vault.connect(user1).borrow(borrowLimit);
+      position = await vault.getPosition(user1.address);
+      console.log("position: ", position);
+    });
+
+  });
+
 });

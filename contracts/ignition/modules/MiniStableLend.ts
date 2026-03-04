@@ -24,10 +24,12 @@ export default buildModule("MiniStableLendModule", (m) => {
   let miniOracle;
   if (true) {
     // 在本地网络部署 MockAggregatorV3 作为喂价合约
-     miniOracle = m.contract("MockAggregatorV3",  [
+    const aggregatorV3 = m.contract("MockAggregatorV3",  [
       3 * 10 * 8,
       8
     ]);
+    miniOracle = m.contract("MiniOracle", [aggregatorV3, timelockAddress]);
+
   } else {
     // 在其他网络使用模拟的 Chainlink 喂价合约地址
     miniOracle = m.contract("MiniOracle", [
